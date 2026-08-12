@@ -28,7 +28,7 @@ pip install -r requirements.txt
 The `main.py` script loads the raw WFDB dataset, extracts the heartbeats, maps the labels, and builds a standard PyTorch `MITBIHDataset`.
 
 ```bash
-python main.py
+python create_db.py
 ```
 
 Because standard HDC thrives on orthogonality, continuous sensor data requires a specific architectural approach. We encode the 360 sample ECG windows into static high dimensional vectors.
@@ -40,6 +40,26 @@ python hdc_db.py
 ```
 
 You can easily modify the script to change the dimensionality (default: `10,000`) or the number of quantization levels (default: `100`).
+
+### 3. HDC Classification & Benchmark (`class_hdc_impl.py`)
+
+In standard Hyperdimensional Computing, a classifier learns by bundling all the training hypervectors of a given class into a single "prototype" vector. Once trained, these class prototypes can be extracted, saved, and used for lightweight inference on new data with some similarity measurements based on these class prototypes.
+
+To train the centroid prototypes, export them, and benchmark their performance across different distance metrics, run:
+
+```bash
+python class_hdc_impl.py
+```
+
+**Benchmark Results (1,000 Dimensions):**
+
+| Method | Accuracy | Macro F1 |
+|--------|----------|----------|
+| **Euclidean distance** | 82.55% | 18.12% |
+| **Dot-product** | 82.39% | 18.43% |
+| Hamming distance | 7.70% | 3.28% |
+| Cosine similarity | 3.04% | 1.58% |
+| Manhattan distance | 2.56% | 1.00% |
 
 ## References & Sources
 

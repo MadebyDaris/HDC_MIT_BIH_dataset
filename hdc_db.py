@@ -1,7 +1,7 @@
 import torch
 import torchhd
 from torchhd import embeddings
-from main import MITBIHDataset
+from create_db import MITBIHDataset
 import os
 
 class HDCEncoder(torch.nn.Module):
@@ -35,6 +35,52 @@ class HDCEncoder(torch.nn.Module):
         encoded_hv = torchhd.multiset(bound_hvs)
         
         return encoded_hv
+
+class HDCClassifier(torch.nn.Module):
+    def __init__(self, dimensions: int, num_classes: int = 5):
+        super(HDCClassifier, self).__init__()
+        self.dimensions = dimensions
+        self.num_classes = num_classes
+
+        # Class hypervectors
+        self.class_hvs = torch.nn.Parameter(torch.randn(num_classes, dimensions, dtype=torch.float32))
+
+        # Initialize class hypervectors to be orthogonal
+        torch.nn.init.orthogonal_(self.class_hvs)
+
+    def forward(self, data: torch.Tensor) -> torch.Tensor:
+        # Calculate similarity (logits) between encoded signals and class hypervectors
+        similarities = torchhd.cosine_similarity(data, self.class_hvs)
+        
+        # Note: We return similarities (logits) for the CrossEntropyLoss, not the argmax!
+        return similarities
+
+    def train_model(self, dataloader: torch.utils.data.DataLoader, epochs: int = 10, learning_rate: float = 0.001):
+        optimizer = torch.optim.Adam(self.parameters(), lr=learning_rate)
+        criterion = torch.nn.CrossEntropyLoss()
+
+        for epoch in range(epochs):
+            total_loss = 0.0
+            for i, (encoded_signals, labels) in enumerate(dataloader):
+                optimizer.zero_grad()
+                logits = self(encoded_signals)
+                loss = criterion(logits, labels)
+                loss.backward()
+                optimizer.step()
+                total_loss += loss.item()
+                
+            print(f"Epoch {epoch + 1}/{epochs}, Loss: {total_loss / len(dataloader):.4f}")
+
+    def test_model(self, dataloader: torch.utils.data.DataLoader):
+        correct = 0
+        total = 0
+        with torch.no_grad():
+            for encoded_signals, labels in dataloader:
+                logits = self(encoded_signals)
+                predictions = torch.argmax(logits, dim=1)
+                correct += (predictions == labels).sum().item()
+                total += labels.size(0)
+        return correct / total
 
 
 def create_hdc_database(dimensions=10000, num_levels=100, output_file="hdc_dataset.pt"):
@@ -73,5 +119,36 @@ def create_hdc_database(dimensions=10000, num_levels=100, output_file="hdc_datas
     }, output_file)
     print("Saved successfully!")
 
+def test_hdc_database(pt_file="hdc_dataset.pt"):
+    print(f"Loading {pt_file}...")
+    data = torch.load(pt_file, weights_only=False)
+    
+    samples = data['samples']
+    labels = data['labels']
+    dimensions = data['dimensions']
+    
+    print(f"Loaded {len(samples)} samples with {dimensions} dimensions.")
+    
+    # Simple train/test split (80/20)
+    dataset = torch.utils.data.TensorDataset(samples, labels)
+    train_size = int(0.8 * len(dataset))
+    test_size = len(dataset) - train_size
+    train_dataset, test_dataset = torch.utils.data.random_split(dataset, [train_size, test_size])
+    
+    # We can use large batch sizes because we are using pre-encoded hypervectors!
+    train_loader = torch.utils.data.DataLoader(train_dataset, batch_size=256, shuffle=True)
+    test_loader = torch.utils.data.DataLoader(test_dataset, batch_size=256, shuffle=False)
+    
+    print("Initializing HDC Classifier...")
+    model = HDCClassifier(dimensions=dimensions, num_classes=5)
+    
+    print("Training model on encoded hypervectors...")
+    model.train_model(train_loader, epochs=5)
+    
+    print("Testing model...")
+    accuracy = model.test_model(test_loader)
+    print(f"Test Accuracy: {accuracy * 100:.2f}%")
+
 if __name__ == "__main__":
-    create_hdc_database(dimensions=10000, num_levels=100, output_file="hdc_dataset.pt")
+    # create_hdc_database(dimensions=1000, num_levels=100, output_file="hdc_dataset.pt")
+    test_hdc_database(pt_file="hdc_dataset.pt")
